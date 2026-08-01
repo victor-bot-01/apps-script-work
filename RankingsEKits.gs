@@ -17,6 +17,29 @@
 const NOME_ABA_RANKINGS = 'Rankings';
 const TAMANHO_TOP_RANKING = 10;
 
+// Agregador puro usado pelo Web App (WebAppApi.gs) — nenhuma escrita em
+// planilha aqui, só monta o payload que a aba "Rankings" (função abaixo,
+// mantida como utilitário manual) também usa internamente.
+function calcularRankings() {
+  const vendas = obterVendasResolvidas_();
+  const dadosKitIndividual = agruparKitIndividualPorProduto_(vendas);
+
+  return {
+    topProdutos: calcularTopProdutos_(vendas),
+    rankingKits: calcularRankingDeKits_(vendas),
+    crescimentoPeriodos: calcularCrescimentoPeriodos_(),
+    semanasDoMes: calcularSemanasDoMes_(),
+    kitVsIndividualPorProduto: calcularKitVsIndividualPorProduto_(dadosKitIndividual),
+    classificacaoKitIndividual: calcularClassificacaoKitIndividual_(dadosKitIndividual),
+    topParticipacaoEmKits: calcularTopParticipacaoEmKits_(dadosKitIndividual),
+    extremosDeKits: calcularExtremosDeKits_(vendas),
+  };
+}
+
+// Utilitário manual (menu "Essência do Brasil"): grava um retrato dos
+// rankings numa aba, útil pra quem quiser abrir a planilha sem passar
+// pelo dashboard. Não é chamado automaticamente pela importação diária —
+// a planilha "Análise e Controle" é só banco de dados (ver prompt.md).
 function atualizarRankings() {
   const vendas = obterVendasResolvidas_();
   const dadosKitIndividual = agruparKitIndividualPorProduto_(vendas);

@@ -107,31 +107,20 @@ function executarImportacaoComTratamento_(dataAlvo) {
   }
 }
 
-// Cada módulo de análise já se recalcula do zero a partir de Pedidos, então
-// a falha de um não deve impedir os outros — cada um é isolado no próprio
-// try/catch e vira só um aviso no Log de Execução, não um erro fatal.
+// A planilha "Análise e Controle" é só banco de dados (ver prompt.md) — as
+// análises (Estoque Inteligente, Previsão, Rankings, Marketplace,
+// Categorias, Calendário, Inventário Rápido, Alertas, Dashboard) não
+// gravam mais abas aqui a cada importação. Elas são recalculadas sob
+// demanda pelo dashboard (Web App, ver WebApp.gs/WebAppApi.gs) quando o
+// usuário abre a página, sempre a partir dos dados mais recentes de
+// Pedidos/Estoque/Ficha Técnica. As funções `atualizar*` que gravam abas
+// continuam disponíveis nos respectivos arquivos como utilitário manual
+// (menu "Essência do Brasil"), pra quem quiser um retrato pontual dentro
+// do próprio Sheets.
 function executarModulosPosImportacao_(resultado) {
-  const modulos = [
-    { nome: 'Estoque Inteligente', funcao: atualizarEstoqueInteligente },
-    { nome: 'Previsão', funcao: atualizarPrevisao },
-    { nome: 'Rankings', funcao: atualizarRankings },
-    { nome: 'Marketplace', funcao: atualizarMarketplace },
-    { nome: 'Categorias', funcao: atualizarCategorias },
-    { nome: 'Calendário', funcao: atualizarCalendario },
-    { nome: 'Inventário Rápido', funcao: atualizarInventarioRapido },
-    { nome: 'Alertas', funcao: atualizarAlertas },
-    { nome: 'Dashboard', funcao: atualizarDashboard },
-  ];
-
-  modulos.forEach(function (modulo) {
-    try {
-      modulo.funcao();
-    } catch (erro) {
-      resultado.avisos.push(
-        'Falha ao atualizar ' + modulo.nome + ': ' + (erro && erro.message ? erro.message : erro)
-      );
-    }
-  });
+  // Sem módulos pós-importação por enquanto — mantido como ponto de
+  // extensão caso surja alguma análise que precise mesmo ser persistida
+  // em planilha (ex.: cache pesado demais pra recalcular por requisição).
 }
 
 function importarPedidosNovos_(dataAlvo) {

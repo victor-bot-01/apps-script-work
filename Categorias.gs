@@ -48,9 +48,30 @@ function lerFichaTecnica_() {
   return mapa;
 }
 
-function atualizarCategorias() {
+// Agregador puro usado pelo Web App (WebAppApi.gs).
+function calcularCategorias() {
   const vendas = obterVendasResolvidas_();
   const ficha = lerFichaTecnica_();
+
+  return {
+    rankingPorCategoria: calcularRankingPorCampo_(vendas, ficha, 'categoria'),
+    perfumesPorGenero: calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'genero'),
+    perfumesPorColecao: calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'colecao'),
+    perfumesPorFamiliaOlfativa: calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'familiaOlfativa'),
+    perfumesPorVolumetria: calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'volumetria'),
+    oleoEssencialXVegetal: calcularOleoEssencialXVegetal_(vendas, ficha),
+    volumetriaDeOleos: calcularVolumetriaDeOleos_(vendas, ficha),
+    misturasDeOleos: calcularMisturasDeOleos_(vendas, ficha),
+    participacaoFamiliaEssencias: calcularParticipacaoFamiliaEmEssencias_(vendas, ficha),
+  };
+}
+
+// Utilitário manual (menu "Essência do Brasil"): grava um retrato das
+// categorias numa aba. Não é chamado automaticamente pela importação
+// diária — a planilha "Análise e Controle" é só banco de dados (ver
+// prompt.md); a visão viva é o dashboard (Web App).
+function atualizarCategorias() {
+  const dados = calcularCategorias();
 
   const planilha = SpreadsheetApp.getActiveSpreadsheet();
   let aba = planilha.getSheetByName(NOME_ABA_CATEGORIAS);
@@ -58,68 +79,38 @@ function atualizarCategorias() {
   aba.clear();
 
   let linha = 1;
-  linha = escreverSecaoTabela_(
-    aba,
-    linha,
-    'Ranking por Categoria',
-    ['Categoria', 'Quantidade'],
-    calcularRankingPorCampo_(vendas, ficha, 'categoria')
-  );
-  linha = escreverSecaoTabela_(
-    aba,
-    linha,
-    'Perfumes por Gênero',
-    ['Gênero', 'Quantidade'],
-    calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'genero')
-  );
-  linha = escreverSecaoTabela_(
-    aba,
-    linha,
-    'Perfumes por Coleção',
-    ['Coleção', 'Quantidade'],
-    calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'colecao')
-  );
+  linha = escreverSecaoTabela_(aba, linha, 'Ranking por Categoria', ['Categoria', 'Quantidade'], dados.rankingPorCategoria);
+  linha = escreverSecaoTabela_(aba, linha, 'Perfumes por Gênero', ['Gênero', 'Quantidade'], dados.perfumesPorGenero);
+  linha = escreverSecaoTabela_(aba, linha, 'Perfumes por Coleção', ['Coleção', 'Quantidade'], dados.perfumesPorColecao);
   linha = escreverSecaoTabela_(
     aba,
     linha,
     'Perfumes por Família Olfativa',
     ['Família Olfativa', 'Quantidade'],
-    calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'familiaOlfativa')
+    dados.perfumesPorFamiliaOlfativa
   );
-  linha = escreverSecaoTabela_(
-    aba,
-    linha,
-    'Perfumes por Volumetria',
-    ['Volumetria', 'Quantidade'],
-    calcularRankingPorCampoDeCategoria_(vendas, ficha, 'perfume', 'volumetria')
-  );
+  linha = escreverSecaoTabela_(aba, linha, 'Perfumes por Volumetria', ['Volumetria', 'Quantidade'], dados.perfumesPorVolumetria);
   linha = escreverSecaoTabela_(
     aba,
     linha,
     'Óleo Essencial x Óleo Vegetal',
     ['Tipo de Óleo', 'Quantidade'],
-    calcularOleoEssencialXVegetal_(vendas, ficha)
+    dados.oleoEssencialXVegetal
   );
   linha = escreverSecaoTabela_(
     aba,
     linha,
     'Tamanho Mais Vendido entre Óleos',
     ['Volumetria', 'Quantidade'],
-    calcularVolumetriaDeOleos_(vendas, ficha)
+    dados.volumetriaDeOleos
   );
-  linha = escreverSecaoTabela_(
-    aba,
-    linha,
-    'Misturas de Óleos Mais Vendidas',
-    ['Mistura', 'Quantidade'],
-    calcularMisturasDeOleos_(vendas, ficha)
-  );
+  linha = escreverSecaoTabela_(aba, linha, 'Misturas de Óleos Mais Vendidas', ['Mistura', 'Quantidade'], dados.misturasDeOleos);
   escreverSecaoTabela_(
     aba,
     linha,
     'Participação por Família Olfativa (dentro de Essências)',
     ['Família Olfativa', 'Quantidade', '% do Total de Essências'],
-    calcularParticipacaoFamiliaEmEssencias_(vendas, ficha)
+    dados.participacaoFamiliaEssencias
   );
 
   aba.autoResizeColumns(1, 3);

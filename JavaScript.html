@@ -1,0 +1,548 @@
+<script>
+  var PALETA_CATEGORICA = [
+    '#3b82f6', '#22c55e', '#f97316', '#a78bfa', '#f472b6', '#eab308', '#14b8a6', '#f87171',
+    '#60a5fa', '#4ade80', '#fb923c', '#c084fc', '#facc15', '#2dd4bf', '#fca5a5', '#93c5fd',
+    '#86efac', '#fdba74',
+  ];
+
+  var SECOES = {
+    dashboard: {
+      titulo: 'Dashboard',
+      filtros: ['periodo'],
+      carregar: function () {
+        carregarDashboard(document.getElementById('filtro-periodo').value);
+      },
+    },
+    rankings: { titulo: 'Rankings & Kits', filtros: ['tipovenda'], carregar: carregarRankings },
+    estoque: { titulo: 'Estoque Inteligente', filtros: [], carregar: carregarEstoque },
+    previsao: { titulo: 'Previsão de Demanda', filtros: [], carregar: carregarPrevisao },
+    marketplace: { titulo: 'Marketplace', filtros: ['marketplace'], carregar: carregarMarketplace },
+    categorias: { titulo: 'Categorias', filtros: ['categoria'], carregar: carregarCategorias },
+    calendario: { titulo: 'Calendário & Sazonalidade', filtros: [], carregar: carregarCalendario },
+    alertas: { titulo: 'Alertas Inteligentes', filtros: [], carregar: carregarAlertas },
+    inventario: { titulo: 'Inventário Rápido', filtros: [], carregar: carregarInventario },
+  };
+
+  var secaoAtual = 'dashboard';
+  var state = {};
+  var carregado = {};
+
+  // ---------- infraestrutura ----------
+
+  function runServer(nomeFuncao) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var chamada = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      chamada[nomeFuncao].apply(chamada, args);
+    });
+  }
+
+  function fmt_(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    return typeof v === 'number' ? v.toLocaleString('pt-BR') : String(v);
+  }
+
+  function escapeAttr_(s) {
+    return String(s).replace(/"/g, '&quot;');
+  }
+
+  function parseDataISO_(iso) {
+    var partes = iso.split('-');
+    return new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]));
+  }
+
+  function mostrarErro_(erro) {
+    console.error(erro);
+    var msg = erro && erro.message ? erro.message : String(erro);
+    var secaoEl = document.getElementById('section-' + secaoAtual);
+    var aviso = document.createElement('div');
+    aviso.className = 'empty-state';
+    aviso.style.color = '#fca5a5';
+    aviso.textContent = 'Erro ao carregar: ' + msg;
+    secaoEl.insertBefore(aviso, secaoEl.firstChild);
+  }
+
+  function chartOptionsBase_(extra) {
+    var base = {
+      backgroundColor: 'transparent',
+      titleTextStyle: { color: '#e6ecff' },
+      legendTextStyle: { color: '#93a2c7' },
+      hAxis: { textStyle: { color: '#93a2c7' }, gridlines: { color: '#263353' } },
+      vAxis: { textStyle: { color: '#93a2c7' }, gridlines: { color: '#263353' } },
+      chartArea: { left: 60, right: 20, top: 20, bottom: 50, width: '100%', height: '100%' },
+    };
+    for (var chave in extra) base[chave] = extra[chave];
+    return base;
+  }
+
+  function renderArrayTable(elId, headers, rows) {
+    var el = document.getElementById(elId);
+    if (!rows || rows.length === 0) {
+      el.innerHTML = '<tr><td class="empty-state">Sem dados ainda.</td></tr>';
+      return;
+    }
+    var html = '<thead><tr>' + headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>';
+    rows.forEach(function (row) {
+      html += '<tr>' + row.map(function (v) { return '<td>' + fmt_(v) + '</td>'; }).join('') + '</tr>';
+    });
+    html += '</tbody>';
+    el.innerHTML = html;
+  }
+
+  // ---------- navegação ----------
+
+  function ativarSecao_(nome) {
+    secaoAtual = nome;
+    document.querySelectorAll('.nav-item').forEach(function (el) {
+      el.classList.toggle('active', el.dataset.section === nome);
+    });
+    document.querySelectorAll('.section').forEach(function (el) {
+      el.classList.toggle('active', el.id === 'section-' + nome);
+    });
+    document.getElementById('topbar-title').textContent = SECOES[nome].titulo;
+
+    ['periodo', 'marketplace', 'categoria', 'tipovenda'].forEach(function (f) {
+      document.getElementById('filtro-' + f + '-wrap').style.display =
+        SECOES[nome].filtros.indexOf(f) !== -1 ? 'inline-block' : 'none';
+    });
+
+    if (!carregado[nome]) {
+      carregado[nome] = true;
+      SECOES[nome].carregar();
+    }
+  }
+
+  // ---------- Dashboard ----------
+
+  function carregarDashboard(periodo) {
+    document.getElementById('kpi-grid').innerHTML = '<div class="loading">Carregando KPIs…</div>';
+    runServer('apiObterKPIs', Number(periodo))
+      .then(function (kpis) {
+        renderKpiCards_(kpis);
+        renderChartTopProdutos_(kpis.rankingProdutos);
+        renderChartPorMarketplace_(kpis.rankingLojas);
+        renderChartKitIndividual_(kpis.kits, kpis.individuais);
+        renderGaugeRisco_(kpis.produtosEmRiscoDeRuptura, kpis.produtosAtivos + kpis.produtosSemVenda);
+      })
+      .catch(mostrarErro_);
+  }
+
+  function renderKpiCards_(k) {
+    var cards = [
+      { label: 'Pedidos no período', value: k.pedidosNoPeriodo, accent: 'var(--blue)' },
+      { label: 'Itens vendidos', value: k.itensVendidos, accent: 'var(--blue)' },
+      { label: 'Produtos ativos / sem venda', value: k.produtosAtivos + ' / ' + k.produtosSemVenda, accent: 'var(--green)' },
+      { label: 'Estoque total', value: k.estoqueTotal, accent: 'var(--green)' },
+      { label: 'Produtos em risco de ruptura', value: k.produtosEmRiscoDeRuptura, accent: 'var(--orange)' },
+      { label: 'Kits vs. individuais', value: k.kits + ' / ' + k.individuais, accent: 'var(--blue)' },
+      { label: 'Produto campeão', value: k.produtoCampeao, accent: 'var(--green)' },
+      { label: 'Marketplace campeão', value: k.marketplaceCampeao, accent: 'var(--orange)' },
+    ];
+    document.getElementById('kpi-grid').innerHTML = cards
+      .map(function (c) {
+        return (
+          '<div class="kpi-card" style="--accent:' + c.accent + '"><div class="label">' + c.label +
+          '</div><div class="value">' + fmt_(c.value) + '</div></div>'
+        );
+      })
+      .join('');
+  }
+
+  function renderChartTopProdutos_(rankingProdutos) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Produto');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(rankingProdutos.length ? rankingProdutos : [['Sem dados', 0]]);
+    var chart = new google.visualization.ColumnChart(document.getElementById('chart-top-produtos'));
+    chart.draw(data, chartOptionsBase_({ colors: ['#3b82f6'], legend: { position: 'none' } }));
+  }
+
+  function renderChartPorMarketplace_(rankingLojas) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Loja');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(rankingLojas.length ? rankingLojas : [['Sem dados', 1]]);
+    var chart = new google.visualization.PieChart(document.getElementById('chart-por-marketplace'));
+    chart.draw(data, chartOptionsBase_({ colors: PALETA_CATEGORICA, legend: { position: 'right', textStyle: { color: '#93a2c7' } } }));
+  }
+
+  function renderChartKitIndividual_(kits, individuais) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Tipo');
+    data.addColumn('number', 'Quantidade');
+    data.addRows([['Kits', kits], ['Individuais', individuais]]);
+    var chart = new google.visualization.PieChart(document.getElementById('chart-kit-individual'));
+    chart.draw(
+      data,
+      chartOptionsBase_({ colors: ['#3b82f6', '#22c55e'], pieHole: 0.4, legend: { position: 'right', textStyle: { color: '#93a2c7' } } })
+    );
+  }
+
+  function renderGaugeRisco_(qtdRisco, totalCatalogo) {
+    var max = Math.max(totalCatalogo, qtdRisco, 1);
+    var data = google.visualization.arrayToDataTable([
+      ['Label', 'Value'],
+      ['Em risco', qtdRisco],
+    ]);
+    var chart = new google.visualization.Gauge(document.getElementById('chart-gauge-risco'));
+    chart.draw(data, {
+      max: max,
+      min: 0,
+      redFrom: Math.round(max * 0.66),
+      redTo: max,
+      yellowFrom: Math.round(max * 0.33),
+      yellowTo: Math.round(max * 0.66),
+      greenFrom: 0,
+      greenTo: Math.round(max * 0.33),
+      minorTicks: 5,
+      backgroundColor: 'transparent',
+    });
+  }
+
+  // ---------- Rankings ----------
+
+  function carregarRankings() {
+    runServer('apiObterRankings')
+      .then(function (dados) {
+        state.rankings = dados;
+        renderArrayTable('tabela-top-produtos', ['Produto', 'Quantidade'], dados.topProdutos);
+        renderArrayTable('tabela-ranking-kits', ['Kit', 'Quantidade'], dados.rankingKits);
+        renderArrayTable('tabela-crescimento', ['Período', 'Atual', 'Anterior', 'Variação'], dados.crescimentoPeriodos);
+        renderChartSemanasMes_(dados.semanasDoMes);
+        aplicarFiltroTipoVenda_();
+        renderArrayTable('tabela-top-participacao-kits', ['Produto', 'Quantidade em Kits'], dados.topParticipacaoEmKits);
+        renderArrayTable('tabela-extremos-kits', ['Destaque', 'Kit', 'Quantidade'], dados.extremosDeKits);
+      })
+      .catch(mostrarErro_);
+  }
+
+  function renderChartSemanasMes_(semanasDoMes) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Semana');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(semanasDoMes.length ? semanasDoMes : [['Sem dados', 0]]);
+    var chart = new google.visualization.ColumnChart(document.getElementById('chart-semanas-mes'));
+    chart.draw(data, chartOptionsBase_({ colors: ['#a78bfa'], legend: { position: 'none' } }));
+  }
+
+  function aplicarFiltroTipoVenda_() {
+    var dados = state.rankings;
+    if (!dados) return;
+    renderArrayTable(
+      'tabela-kit-vs-individual',
+      ['Produto', 'Vendido em Kit', 'Vendido Individual', 'Predominância'],
+      dados.kitVsIndividualPorProduto
+    );
+    var filtro = document.getElementById('filtro-tipovenda').value;
+    var mapa = { kit: 'Só Kit', individual: 'Só Individual', ambos: 'Ambos' };
+    var linhas = filtro
+      ? dados.classificacaoKitIndividual.filter(function (l) { return l[1] === mapa[filtro]; })
+      : dados.classificacaoKitIndividual;
+    renderArrayTable('tabela-classificacao-kit', ['Produto', 'Classificação'], linhas);
+  }
+
+  // ---------- Estoque Inteligente ----------
+
+  function carregarEstoque() {
+    runServer('apiObterEstoqueInteligente').then(renderTabelaEstoque_).catch(mostrarErro_);
+  }
+
+  function badgesStatus_(status) {
+    if (status === 'Normal') return '<span class="badge badge-green">Normal</span>';
+    if (status === 'Sem registro em Estoque') return '<span class="badge badge-yellow">Sem registro</span>';
+    return status
+      .split(' / ')
+      .map(function (s) {
+        if (s === 'Risco de ruptura') return '<span class="badge badge-red">Risco de ruptura</span>';
+        if (s === 'Excesso') return '<span class="badge badge-orange">Excesso</span>';
+        if (s === 'Parado') return '<span class="badge badge-gray">Parado</span>';
+        return '<span class="badge badge-gray">' + s + '</span>';
+      })
+      .join(' ');
+  }
+
+  function renderTabelaEstoque_(linhas) {
+    var el = document.getElementById('tabela-estoque');
+    if (!linhas.length) {
+      el.innerHTML = '<tr><td class="empty-state">Sem produtos.</td></tr>';
+      return;
+    }
+    var html =
+      '<thead><tr><th>Produto</th><th>Estoque</th><th>Mínimo</th><th>Ideal</th><th>Segurança</th><th>Máximo</th>' +
+      '<th>Dias Restantes</th><th>Dias / 1un.</th><th>Giro Sem.</th><th>Giro Mês</th><th>Status</th></tr></thead><tbody>';
+    linhas.forEach(function (l) {
+      html +=
+        '<tr><td>' + l.produto + '</td>' +
+        '<td>' + fmt_(l.estoqueAtual) + '</td>' +
+        '<td>' + fmt_(l.nivelMinimo) + '</td>' +
+        '<td>' + fmt_(l.nivelIdeal) + '</td>' +
+        '<td>' + fmt_(l.nivelSeguranca) + '</td>' +
+        '<td>' + fmt_(l.nivelMaximo) + '</td>' +
+        '<td>' + fmt_(l.diasRestantes !== null ? Math.round(l.diasRestantes) : null) + '</td>' +
+        '<td>' + fmt_(l.diasParaVenderUmaUnidade) + '</td>' +
+        '<td>' + fmt_(l.giroSemanal) + '</td>' +
+        '<td>' + fmt_(l.giroMensal) + '</td>' +
+        '<td>' + badgesStatus_(l.status) + '</td></tr>';
+    });
+    html += '</tbody>';
+    el.innerHTML = html;
+  }
+
+  // ---------- Previsão ----------
+
+  var HORIZONTES_PREVISAO_JS = ['Próx. Semana (7d)', '15 Dias', 'Próx. Mês (30d)', '3 Meses (91d)', '6 Meses (182d)'];
+
+  function carregarPrevisao() {
+    runServer('apiObterPrevisao').then(renderTabelaPrevisao_).catch(mostrarErro_);
+  }
+
+  function renderTabelaPrevisao_(linhas) {
+    var el = document.getElementById('tabela-previsao');
+    if (!linhas.length) {
+      el.innerHTML = '<tr><td class="empty-state">Sem dados.</td></tr>';
+      return;
+    }
+    var html =
+      '<thead><tr><th>Produto</th><th>Média Móvel</th><th>Tendência</th><th>Crescimento %</th>' +
+      HORIZONTES_PREVISAO_JS.map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+      '<th>IC (30d)</th><th>Sugestão Produção</th></tr></thead><tbody>';
+    linhas.forEach(function (l) {
+      html +=
+        '<tr><td>' + l.produto + '</td><td>' + fmt_(l.mediaMovelSemanal) + '</td><td>' + fmt_(l.tendenciaSemanal) + '</td>' +
+        '<td>' + (l.crescimentoPercentual !== null ? Math.round(l.crescimentoPercentual * 10) / 10 + '%' : '—') + '</td>' +
+        HORIZONTES_PREVISAO_JS.map(function (h) { return '<td>' + fmt_(l.previsoes[h]) + '</td>'; }).join('') +
+        '<td>[' + l.intervaloConfianca[0] + ' – ' + l.intervaloConfianca[1] + ']</td>' +
+        '<td>' + fmt_(l.sugestaoProducao) + '</td></tr>';
+    });
+    html += '</tbody>';
+    el.innerHTML = html;
+  }
+
+  // ---------- Marketplace ----------
+
+  function carregarMarketplace() {
+    runServer('apiObterMarketplace')
+      .then(function (dados) {
+        state.marketplace = dados;
+        popularFiltroMarketplace_(dados.linhas);
+        renderChartMarketplaceTotal_(dados.linhas);
+        aplicarFiltroMarketplace_();
+      })
+      .catch(mostrarErro_);
+  }
+
+  function popularFiltroMarketplace_(linhas) {
+    var sel = document.getElementById('filtro-marketplace');
+    var atual = sel.value;
+    sel.innerHTML =
+      '<option value="">Todos os marketplaces</option>' +
+      linhas.map(function (l) { return '<option value="' + escapeAttr_(l[0]) + '">' + l[0] + '</option>'; }).join('');
+    sel.value = atual;
+  }
+
+  function aplicarFiltroMarketplace_() {
+    var dados = state.marketplace;
+    if (!dados) return;
+    var filtro = document.getElementById('filtro-marketplace').value;
+    var cabecalho = ['Loja', 'Quantidade Total', 'Produto Mais Vendido', 'Kit Mais Vendido'].concat(
+      dados.categorias.map(function (c) { return 'Mais Vendido (' + c + ')'; })
+    );
+    var linhas = filtro ? dados.linhas.filter(function (l) { return l[0] === filtro; }) : dados.linhas;
+    renderArrayTable('tabela-marketplace', cabecalho, linhas);
+  }
+
+  function renderChartMarketplaceTotal_(linhas) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Loja');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(linhas.length ? linhas.map(function (l) { return [l[0], l[1]]; }) : [['Sem dados', 0]]);
+    var chart = new google.visualization.ColumnChart(document.getElementById('chart-marketplace-total'));
+    chart.draw(data, chartOptionsBase_({ colors: ['#f97316'], legend: { position: 'none' } }));
+  }
+
+  // ---------- Categorias ----------
+
+  function carregarCategorias() {
+    runServer('apiObterCategorias')
+      .then(function (dados) {
+        state.categorias = dados;
+        popularFiltroCategoria_(dados.rankingPorCategoria);
+        aplicarFiltroCategoria_();
+        renderArrayTable('tabela-perfumes-genero', ['Gênero', 'Quantidade'], dados.perfumesPorGenero);
+        renderArrayTable('tabela-perfumes-colecao', ['Coleção', 'Quantidade'], dados.perfumesPorColecao);
+        renderArrayTable('tabela-perfumes-familia', ['Família Olfativa', 'Quantidade'], dados.perfumesPorFamiliaOlfativa);
+        renderArrayTable('tabela-perfumes-volumetria', ['Volumetria', 'Quantidade'], dados.perfumesPorVolumetria);
+        renderArrayTable('tabela-oleo-essencial-vegetal', ['Tipo de Óleo', 'Quantidade'], dados.oleoEssencialXVegetal);
+        renderArrayTable('tabela-volumetria-oleos', ['Volumetria', 'Quantidade'], dados.volumetriaDeOleos);
+        renderArrayTable('tabela-misturas-oleos', ['Mistura', 'Quantidade'], dados.misturasDeOleos);
+        renderArrayTable('tabela-participacao-familia', ['Família Olfativa', 'Quantidade', '% do Total'], dados.participacaoFamiliaEssencias);
+      })
+      .catch(mostrarErro_);
+  }
+
+  function popularFiltroCategoria_(rankingPorCategoria) {
+    var sel = document.getElementById('filtro-categoria');
+    var atual = sel.value;
+    sel.innerHTML =
+      '<option value="">Todas as categorias</option>' +
+      rankingPorCategoria.map(function (l) { return '<option value="' + escapeAttr_(l[0]) + '">' + l[0] + '</option>'; }).join('');
+    sel.value = atual;
+  }
+
+  function aplicarFiltroCategoria_() {
+    var dados = state.categorias;
+    if (!dados) return;
+    var filtro = document.getElementById('filtro-categoria').value;
+    var linhas = filtro ? dados.rankingPorCategoria.filter(function (l) { return l[0] === filtro; }) : dados.rankingPorCategoria;
+    renderChartCategoria_(linhas);
+  }
+
+  function renderChartCategoria_(linhas) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Categoria');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(linhas.length ? linhas : [['Sem dados', 0]]);
+    var chart = new google.visualization.PieChart(document.getElementById('chart-ranking-categoria'));
+    chart.draw(data, chartOptionsBase_({ colors: PALETA_CATEGORICA, legend: { position: 'right', textStyle: { color: '#93a2c7' } } }));
+  }
+
+  // ---------- Calendário ----------
+
+  function carregarCalendario() {
+    runServer('apiObterCalendario')
+      .then(function (dados) {
+        renderChartHeatmap_(dados.heatmapDias);
+        renderChartDiaSemana_(dados.porDiaDaSemana);
+        renderArrayTable('tabela-sem-venda', ['Limiar', 'Qtd. de Produtos'], dados.contagemSemVenda);
+        renderArrayTable(
+          'tabela-classificacao-produtos',
+          ['Produto', 'Últimos 30d', '30-60d Atrás', 'Variação %', 'Última Venda', 'Dias Sem Venda', 'Classificação'],
+          dados.classificacaoProdutos
+        );
+      })
+      .catch(mostrarErro_);
+  }
+
+  function renderChartHeatmap_(heatmapDias) {
+    var data = new google.visualization.DataTable();
+    data.addColumn({ type: 'date', id: 'Data' });
+    data.addColumn({ type: 'number', id: 'Quantidade' });
+    data.addRows(heatmapDias.map(function (par) { return [parseDataISO_(par[0]), par[1]]; }));
+    var chart = new google.visualization.Calendar(document.getElementById('chart-heatmap'));
+    chart.draw(data, {
+      noDataPattern: { backgroundColor: '#17233d', color: '#263353' },
+      colorAxis: { colors: ['#17233d', '#3b82f6'] },
+      cellSize: 12,
+      calendar: {
+        cellColor: { stroke: '#263353', strokeOpacity: 0.5 },
+        dayOfWeekLabel: { color: '#93a2c7' },
+        monthLabel: { color: '#e6ecff' },
+        focusedCellColor: { stroke: '#f97316' },
+      },
+      backgroundColor: 'transparent',
+    });
+  }
+
+  function renderChartDiaSemana_(porDiaDaSemana) {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Dia');
+    data.addColumn('number', 'Quantidade');
+    data.addRows(porDiaDaSemana);
+    var chart = new google.visualization.ColumnChart(document.getElementById('chart-dia-semana'));
+    chart.draw(data, chartOptionsBase_({ colors: ['#22c55e'], legend: { position: 'none' } }));
+  }
+
+  // ---------- Alertas ----------
+
+  function carregarAlertas() {
+    runServer('apiObterAlertas').then(renderAlertas_).catch(mostrarErro_);
+  }
+
+  function renderAlertas_(alertas) {
+    var el = document.getElementById('lista-alertas');
+    if (!alertas.length) {
+      el.innerHTML = '<div class="empty-state">Nenhum alerta no momento.</div>';
+      return;
+    }
+    var classePorTipo = {
+      'Estoque acabando': 'tipo-estoque',
+      'Acima da média': 'tipo-crescimento',
+      'Queda de vendas': 'tipo-queda',
+      'Sem etiqueta': 'tipo-etiqueta',
+      'Kit crescendo rapidamente': 'tipo-kit',
+    };
+    el.innerHTML = alertas
+      .map(function (a) {
+        var classe = classePorTipo[a.tipo] || '';
+        return '<div class="alert-item ' + classe + '"><span class="tipo-tag">' + a.tipo + '</span><span>' + a.mensagem + '</span></div>';
+      })
+      .join('');
+  }
+
+  // ---------- Inventário Rápido ----------
+
+  function carregarInventario() {
+    runServer('apiObterInventarioRapido')
+      .then(function (dados) {
+        renderTabelaInventario_(dados.itens);
+        renderChecklist_(dados.checklistProducao);
+      })
+      .catch(mostrarErro_);
+  }
+
+  function renderTabelaInventario_(itens) {
+    var el = document.getElementById('tabela-inventario');
+    if (!itens.length) {
+      el.innerHTML = '<tr><td class="empty-state">Sem produtos em Estoque.</td></tr>';
+      return;
+    }
+    var html = '<thead><tr><th>Produto</th><th>Quantidade</th><th>Etapa de Produção</th><th>Etiqueta</th></tr></thead><tbody>';
+    itens.forEach(function (i) {
+      var etiquetaBadge =
+        i.rotulado === null
+          ? '<span class="badge badge-gray">—</span>'
+          : i.rotulado
+          ? '<span class="badge badge-green">Rotulado</span>'
+          : '<span class="badge badge-red">Sem Rótulo</span>';
+      html += '<tr><td>' + i.produto + '</td><td>' + fmt_(i.quantidade) + '</td><td>' + i.etapa + '</td><td>' + etiquetaBadge + '</td></tr>';
+    });
+    html += '</tbody>';
+    el.innerHTML = html;
+  }
+
+  function renderChecklist_(checklist) {
+    var el = document.getElementById('checklist-producao');
+    if (!checklist.length) {
+      el.innerHTML = '<div class="empty-state">Nenhuma produção sugerida no momento.</div>';
+      return;
+    }
+    el.innerHTML = checklist
+      .map(function (c) {
+        var itens = '';
+        for (var i = 0; i < c.quantidade; i++) itens += '<div class="item">&#9744; ' + c.produto + '</div>';
+        return '<div class="checklist-group"><div class="titulo">' + c.produto + ' (produzir ' + c.quantidade + ')</div>' + itens + '</div>';
+      })
+      .join('');
+  }
+
+  // ---------- inicialização ----------
+
+  function iniciar_() {
+    document.querySelectorAll('.nav-item').forEach(function (el) {
+      el.addEventListener('click', function () { ativarSecao_(el.dataset.section); });
+    });
+    document.getElementById('filtro-periodo').addEventListener('change', function () { carregarDashboard(this.value); });
+    document.getElementById('filtro-marketplace').addEventListener('change', aplicarFiltroMarketplace_);
+    document.getElementById('filtro-categoria').addEventListener('change', aplicarFiltroCategoria_);
+    document.getElementById('filtro-tipovenda').addEventListener('change', aplicarFiltroTipoVenda_);
+    document.getElementById('btn-atualizar').addEventListener('click', function () {
+      carregado[secaoAtual] = false;
+      ativarSecao_(secaoAtual);
+    });
+
+    ativarSecao_('dashboard');
+  }
+
+  google.charts.load('current', { packages: ['corechart', 'calendar', 'gauge'] });
+  google.charts.setOnLoadCallback(iniciar_);
+</script>

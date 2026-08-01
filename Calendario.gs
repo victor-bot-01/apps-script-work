@@ -16,6 +16,24 @@ const LIMIAR_CRESCIMENTO_PRODUTO = 20;
 const LIMIAR_QUEDA_PRODUTO = -20;
 const DIAS_SEM_VENDA_LIMIARES = [30, 60, 90, 180];
 
+// Agregador puro usado pelo Web App (WebAppApi.gs).
+function calcularCalendario() {
+  const pedidosBrutos = lerTodosPedidosBrutos_();
+  const eventosPorProduto = obterVendasPorProduto_(400);
+  const classificacao = calcularClassificacaoDeProdutos_(eventosPorProduto);
+
+  return {
+    heatmapDias: calcularHeatmapDeDias_(pedidosBrutos),
+    porDiaDaSemana: calcularVendasPorDiaDaSemana_(pedidosBrutos),
+    classificacaoProdutos: classificacao,
+    contagemSemVenda: calcularContagemSemVenda_(classificacao),
+  };
+}
+
+// Utilitário manual (menu "Essência do Brasil"): grava um retrato do
+// calendário numa aba. Não é chamado automaticamente pela importação
+// diária — a planilha "Análise e Controle" é só banco de dados (ver
+// prompt.md); a visão viva é o dashboard (Web App).
 function atualizarCalendario() {
   const pedidosBrutos = lerTodosPedidosBrutos_();
   const eventosPorProduto = obterVendasPorProduto_(400);

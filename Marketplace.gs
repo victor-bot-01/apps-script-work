@@ -5,7 +5,8 @@
 
 const NOME_ABA_MARKETPLACE = 'Marketplace';
 
-function atualizarMarketplace() {
+// Agregador puro usado pelo Web App (WebAppApi.gs).
+function calcularMarketplace() {
   const vendas = obterVendasComLoja_();
   const ficha = lerFichaTecnica_();
 
@@ -15,14 +16,32 @@ function atualizarMarketplace() {
     porLoja.get(venda.loja).push(venda);
   });
 
+  const categoriasPresentes = obterCategoriasDistintas_(ficha);
+  const linhas = Array.from(porLoja.entries())
+    .map(function (par) {
+      return montarLinhaMarketplace_(par[0], par[1], ficha, categoriasPresentes);
+    })
+    .sort(function (a, b) {
+      return b[1] - a[1];
+    });
+
+  return { categorias: categoriasPresentes, linhas: linhas };
+}
+
+// Utilitário manual (menu "Essência do Brasil"): grava um retrato do
+// marketplace numa aba. Não é chamado automaticamente pela importação
+// diária — a planilha "Análise e Controle" é só banco de dados (ver
+// prompt.md); a visão viva é o dashboard (Web App).
+function atualizarMarketplace() {
+  const dados = calcularMarketplace();
+
   const planilha = SpreadsheetApp.getActiveSpreadsheet();
   let aba = planilha.getSheetByName(NOME_ABA_MARKETPLACE);
   if (!aba) aba = planilha.insertSheet(NOME_ABA_MARKETPLACE);
   aba.clear();
 
-  const categoriasPresentes = obterCategoriasDistintas_(ficha);
   const cabecalho = ['Loja', 'Quantidade Total', 'Produto Mais Vendido', 'Kit Mais Vendido'].concat(
-    categoriasPresentes.map(function (categoria) {
+    dados.categorias.map(function (categoria) {
       return 'Mais Vendido (' + categoria + ')';
     })
   );
@@ -35,16 +54,8 @@ function atualizarMarketplace() {
     .setFontColor('#ffffff');
   aba.setFrozenRows(1);
 
-  const linhas = Array.from(porLoja.entries())
-    .map(function (par) {
-      return montarLinhaMarketplace_(par[0], par[1], ficha, categoriasPresentes);
-    })
-    .sort(function (a, b) {
-      return b[1] - a[1];
-    });
-
-  if (linhas.length > 0) {
-    aba.getRange(2, 1, linhas.length, cabecalho.length).setValues(linhas);
+  if (dados.linhas.length > 0) {
+    aba.getRange(2, 1, dados.linhas.length, cabecalho.length).setValues(dados.linhas);
   }
   aba.autoResizeColumns(1, cabecalho.length);
 }

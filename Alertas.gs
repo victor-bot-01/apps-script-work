@@ -14,7 +14,8 @@ const LIMIAR_QUEDA_ALERTA = -30;
 const LIMIAR_DIAS_ESTOQUE_ACABANDO = 7;
 const LIMIAR_CRESCIMENTO_KIT_RAPIDO = 50;
 
-function atualizarAlertas() {
+// Agregador puro usado pelo Web App (WebAppApi.gs).
+function calcularAlertas() {
   const alertas = []
     .concat(gerarAlertasDeEstoque_())
     .concat(gerarAlertasDeCrescimentoEQueda_())
@@ -29,6 +30,15 @@ function atualizarAlertas() {
     });
   }
 
+  return alertas;
+}
+
+// Utilitário manual (menu "Essência do Brasil"): grava um retrato dos
+// alertas numa aba. Não é chamado automaticamente pela importação diária —
+// a planilha "Análise e Controle" é só banco de dados (ver prompt.md); a
+// visão viva é o dashboard (Web App).
+function atualizarAlertas() {
+  const alertas = calcularAlertas();
   escreverAbaAlertas_(alertas);
   return alertas;
 }

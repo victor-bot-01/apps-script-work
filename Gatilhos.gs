@@ -52,21 +52,50 @@ function removerGatilhosPorFuncao_(nomeFuncao) {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Essência do Brasil')
+    .addItem('Abrir Dashboard', 'abrirDashboard_')
     .addItem('Atualizar Pedidos Agora', 'executarImportacaoManual')
     .addSeparator()
-    .addItem('Atualizar Estoque Inteligente', 'atualizarEstoqueInteligente')
-    .addItem('Atualizar Previsão', 'atualizarPrevisao')
-    .addItem('Atualizar Rankings', 'atualizarRankings')
-    .addItem('Atualizar Marketplace', 'atualizarMarketplace')
-    .addItem('Atualizar Categorias', 'atualizarCategorias')
-    .addItem('Atualizar Calendário', 'atualizarCalendario')
-    .addItem('Atualizar Inventário Rápido', 'atualizarInventarioRapido')
-    .addItem('Atualizar Alertas', 'atualizarAlertas')
-    .addItem('Atualizar Dashboard', 'atualizarDashboard')
+    .addSubMenu(
+      SpreadsheetApp.getUi()
+        .createMenu('Retrato manual em planilha (opcional)')
+        .addItem('Atualizar Estoque Inteligente', 'atualizarEstoqueInteligente')
+        .addItem('Atualizar Previsão', 'atualizarPrevisao')
+        .addItem('Atualizar Rankings', 'atualizarRankings')
+        .addItem('Atualizar Marketplace', 'atualizarMarketplace')
+        .addItem('Atualizar Categorias', 'atualizarCategorias')
+        .addItem('Atualizar Calendário', 'atualizarCalendario')
+        .addItem('Atualizar Inventário Rápido', 'atualizarInventarioRapido')
+        .addItem('Atualizar Alertas', 'atualizarAlertas')
+        .addItem('Atualizar Dashboard', 'atualizarDashboard')
+    )
     .addSeparator()
     .addItem('Gerar Relatórios Semanais Agora', 'gerarTodosRelatoriosSemanais')
     .addItem('Gerar Relatório Mensal Agora', 'gerarRelatorioResumoMensal')
     .addSeparator()
     .addItem('Configurar Coluna "Etapa de Produção"', 'adicionarColunaEtapaDeProducao')
     .addToUi();
+}
+
+// Mostra a URL do dashboard (Web App). Só existe depois do primeiro
+// "Implantar > Nova implantação" (ver instruções no topo de WebApp.gs);
+// antes disso, ScriptApp.getService().getUrl() vem vazio.
+function abrirDashboard_() {
+  const url = ScriptApp.getService().getUrl();
+  const ui = SpreadsheetApp.getUi();
+
+  if (!url) {
+    ui.alert(
+      'Dashboard ainda não implantado',
+      'Vá em Implantar > Nova implantação > App da Web (execute como "Eu", acesso "Somente eu") e rode esta opção de novo.',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  const html = HtmlService.createHtmlOutput(
+    '<a href="' + url + '" target="_blank" style="font-family: sans-serif; font-size: 14px;">Abrir dashboard em nova aba</a>'
+  )
+    .setWidth(320)
+    .setHeight(60);
+  ui.showModalDialog(html, 'Dashboard Essência do Brasil');
 }

@@ -121,6 +121,23 @@ function escreverAbaInventarioRapido_(linhas) {
   aba.autoResizeColumns(1, cabecalho.length);
 }
 
+// Agregador puro usado pelo Web App (WebAppApi.gs) — quantidade sugerida
+// de produção por produto, na mesma base que o checklist em planilha usa.
+function calcularChecklistProducao_() {
+  return calcularPrevisaoDemanda()
+    .filter(function (linha) {
+      return linha.sugestaoProducao > 0;
+    })
+    .map(function (linha) {
+      return { produto: linha.produto, quantidade: linha.sugestaoProducao };
+    });
+}
+
+// Utilitário manual (menu "Essência do Brasil"): gera o checklist tipo
+// "☐ Produto" numa aba, pra quem preferir imprimir/ver direto na
+// planilha. Não é chamado automaticamente pela importação diária — a
+// planilha "Análise e Controle" é só banco de dados (ver prompt.md); a
+// visão viva é o dashboard (Web App).
 function gerarChecklistDeProducao_() {
   const planilha = SpreadsheetApp.getActiveSpreadsheet();
   let aba = planilha.getSheetByName(NOME_ABA_CHECKLIST_PRODUCAO);
@@ -129,19 +146,17 @@ function gerarChecklistDeProducao_() {
 
   aba.getRange(1, 1).setValue('Checklist de Produção Sugerida').setFontWeight('bold').setFontSize(14);
 
-  const sugestoes = calcularPrevisaoDemanda().filter(function (linha) {
-    return linha.sugestaoProducao > 0;
-  });
+  const sugestoes = calcularChecklistProducao_();
 
   let linhaAtual = 3;
   sugestoes.forEach(function (sugestao) {
     aba
       .getRange(linhaAtual, 1)
-      .setValue(sugestao.produto + ' (produzir ' + sugestao.sugestaoProducao + ')')
+      .setValue(sugestao.produto + ' (produzir ' + sugestao.quantidade + ')')
       .setFontWeight('bold');
     linhaAtual += 1;
 
-    for (let unidade = 1; unidade <= sugestao.sugestaoProducao; unidade++) {
+    for (let unidade = 1; unidade <= sugestao.quantidade; unidade++) {
       aba.getRange(linhaAtual, 1).setValue('☐ ' + sugestao.produto);
       linhaAtual += 1;
     }
