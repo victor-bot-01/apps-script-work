@@ -280,13 +280,20 @@
                 <span id="etiquetas-contagem-selecionados" class="contagem-selecionados">0 selecionados</span>
                 <input type="email" id="etiquetas-destinatario" class="input-texto" placeholder="E-mail do destinatário" />
                 <button class="btn" id="btn-salvar-email">💾 Salvar este e-mail</button>
-                <button class="btn primary" id="btn-enviar-etiquetas">📧 Enviar relatório por e-mail</button>
+                <button class="btn primary" id="btn-enviar-etiquetas">📧 Enviar Direto</button>
+                <input type="date" id="etiquetas-data-programada" class="input-texto" />
+                <button class="btn primary" id="btn-programar-etiquetas">📅 Programar para às 15h</button>
                 <div class="empty-state" id="etiquetas-status" style="display:none;"></div>
               </div>
 
               <div class="emails-salvos-wrap" id="emails-salvos-wrap" style="display:none;">
                 <div class="emails-salvos-titulo">E-mails salvos (marque para incluir no envio):</div>
                 <div class="emails-salvos-lista" id="emails-salvos-lista"></div>
+              </div>
+
+              <div id="etiquetas-programacoes-wrap" style="display:none;">
+                <h3 class="subsection-title">Envios programados</h3>
+                <div class="table-wrap"><table class="data-table" id="tabela-etiquetas-programacoes"></table></div>
               </div>
 
               <div class="table-wrap"><table class="data-table" id="tabela-etiquetas-sem"></table></div>
